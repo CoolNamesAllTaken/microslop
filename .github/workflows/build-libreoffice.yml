@@ -1,6 +1,6 @@
 # Builds headless LibreOffice with patches/libreoffice/*.patch for ubuntu-24.04 x86_64 and
 # publishes libreoffice-<version>-<rev>-linux-x86_64.tar.gz as a release asset.
-# A cold build takes about 4 h; ccache makes reruns much faster. The build step stops at 5 h so
+# A cold build takes about 2 h 15 min; ccache makes reruns much faster. The build step stops at 5 h so
 # ccache is still saved, and a rerun picks up where it left off.
 name: build-libreoffice
 
