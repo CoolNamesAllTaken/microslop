@@ -1,0 +1,51 @@
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ".[test]"
+      - name: Build fonts
+        run: echo "FONTCONFIG_FILE=$(microslop fonts --check)" >> "$GITHUB_ENV"
+      - run: pytest -v tests
+
+  convert:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make sample docx
+        run: python tests/docx.py sample.docx
+      - uses: ./
+        id: docx2pdf
+        with:
+          files: sample.docx
+          output-dir: out
+      - name: Check PDF
+        env:
+          PDFS: ${{ steps.docx2pdf.outputs.pdfs }}
+        run: |
+          pip install --quiet pymupdf
+          python - <<'PY'
+          import os, pymupdf
+          pdf = os.environ["PDFS"]
+          assert pdf == "out/sample.pdf", pdf
+          doc = pymupdf.open(pdf)
+          fonts = {f[3].split("+")[-1] for page in doc for f in page.get_fonts()}
+          print(doc.page_count, "page(s), fonts:", sorted(fonts))
+          want = {"Carlito-Regular", "Carlito-Bold", "Symbol-Regular", "DocxCourierLabel-Regular",
+                  "DocxConsolas-Regular", "DocxCourierNew-Regular", "DocxSegoeSymbol-Regular", "LiberationSerif"}
+          assert doc.page_count == 1 and want <= fonts, want - fonts
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sample-pdf
+          path: out/sample.pdf
