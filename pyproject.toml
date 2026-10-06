@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "microslop"
+version = "0.1.0"
+description = "Utilities that make LibreOffice behave a little more like Microsoft Office."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = ["fonttools==4.66.1", "uharfbuzz==0.56.2", "zstandard>=0.22"]
+
+[project.optional-dependencies]
+compare = ["pymupdf>=1.24"]
+test = ["pytest", "pymupdf>=1.24"]
+
+[project.scripts]
+microslop = "microslop.cli:main"
+
+[tool.setuptools.package-data]
+microslop = ["fonts.conf"]

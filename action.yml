@@ -1,0 +1,101 @@
+name: microslop docx2pdf
+description: Convert docx to PDF with LibreOffice, laid out like Microsoft Word.
+branding:
+  icon: file-text
+  color: green
+inputs:
+  files:
+    description: docx files to convert (space or newline separated; globs allowed)
+    required: true
+  output-dir:
+    description: Directory for the PDFs (default next to each docx)
+    default: ""
+  lo-version:
+    description: LibreOffice version (TDF deb archive). Set lo-sha256 with it.
+    default: "26.8.1.1"
+  lo-sha256:
+    description: sha256 of the LibreOffice tarball
+    default: "30903df3b9f61360d9660cd707de48cd2831469114492a5008ed58a0ac77d044"
+  lo-url:
+    description: >-
+      LibreOffice tarball to use instead of the TDF debs for lo-version, e.g. a patched build: a TDF-style
+      deb tarball (*/DEBS/*.deb) or an install tree with */program/soffice
+    default: ""
+  python-version:
+    description: Python for microslop
+    default: "3.12"
+outputs:
+  pdfs:
+    description: Space-separated paths of the PDFs written
+    value: ${{ steps.convert.outputs.pdfs }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install microslop
+      id: install
+      shell: bash
+      run: |
+        python -m pip install --quiet "$GITHUB_ACTION_PATH"
+        echo "fonts=$(python -c 'import microslop.fonts as f; print(f.VERSION)')" >> "$GITHUB_OUTPUT"
+
+    - name: Cache LibreOffice
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/microslop/lo
+        key: microslop-lo-${{ inputs.lo-sha256 }}
+
+    - name: Cache font downloads
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/microslop/fonts/download
+        key: microslop-fonts-${{ steps.install.outputs.fonts }}
+
+    - name: Install LibreOffice
+      id: lo
+      shell: bash
+      env:
+        LO_VERSION: ${{ inputs.lo-version }}
+        LO_SHA256: ${{ inputs.lo-sha256 }}
+        LO_URL: ${{ inputs.lo-url }}
+      run: |
+        url=${LO_URL:-https://downloadarchive.documentfoundation.org/libreoffice/old/$LO_VERSION/deb/x86_64/LibreOffice_${LO_VERSION}_Linux_x86-64_deb.tar.gz}
+        tarball=~/.cache/microslop/lo/$(basename "$url")
+        mkdir -p ~/.cache/microslop/lo
+        [ -f "$tarball" ] || curl -fsSL --retry 3 -o "$tarball" "$url"
+        echo "$LO_SHA256  $tarball" | sha256sum -c || { echo "::error::sha256 mismatch for $url (set lo-sha256)"; exit 1; }
+        dir="$RUNNER_TEMP/microslop-lo"
+        rm -rf "$dir" && mkdir -p "$dir"
+        tar xf "$tarball" -C "$dir"
+        debs=$(find "$dir" -path '*/DEBS/*.deb')
+        if [ -n "$debs" ]; then
+          sudo dpkg -i $debs > /dev/null
+          soffice=$(ls /opt/libreoffice*/program/soffice | sort -V | tail -1)
+        else
+          soffice=$(find "$dir" -path '*/program/soffice' | head -1)
+        fi
+        [ -x "$soffice" ] || { echo "::error::no soffice in $url"; exit 1; }
+        "$soffice" --version
+        echo "soffice=$soffice" >> "$GITHUB_OUTPUT"
+
+    - name: Build fonts
+      shell: bash
+      run: microslop fonts --check
+
+    - name: Convert
+      id: convert
+      shell: bash
+      env:
+        FILES: ${{ inputs.files }}
+        OUTDIR: ${{ inputs.output-dir }}
+        SOFFICE: ${{ steps.lo.outputs.soffice }}
+      run: |
+        shopt -s globstar nullglob
+        files=($FILES)
+        [ ${#files[@]} -gt 0 ] || { echo "::error::no files match: $FILES"; exit 1; }
+        pdfs=$(microslop docx2pdf "${files[@]}" ${OUTDIR:+--outdir "$OUTDIR"})
+        echo "$pdfs"
+        echo "pdfs=$(echo $pdfs)" >> "$GITHUB_OUTPUT"
