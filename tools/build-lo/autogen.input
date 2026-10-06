@@ -36,3 +36,4 @@
 --disable-pdfimport
 --without-system-nss
 --enable-release-build
+--without-gssapi
