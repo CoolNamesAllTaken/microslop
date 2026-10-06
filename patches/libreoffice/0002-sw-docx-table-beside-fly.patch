@@ -1,0 +1,957 @@
+From 80d3f7bd0dfb9a2152fdc0b3b02411e1f7ebd676 Mon Sep 17 00:00:00 2001
+From: Claud McClaudeson <claud@pantsforbirds.com>
+Date: Tue, 6 Oct 2026 05:08:25 +0000
+Subject: [PATCH 2/3] sw DOCX: tables beside a wrapped image like Word 2007 and
+ Word 2013
+
+A table that overlaps an image with parallel wrap is shifted below the
+image in Word 2013+ (DOCX compatibilityMode 15). Word <= 2010 narrows an
+autofit table without a preferred width instead, so that the text area
+of its cells ends where the image's wrap area starts. Only the last
+column gets narrower. The rest of a table continued on a next page, and
+other tables, are shifted below the image.
+
+Two problems in SwTabFrame::CalcFlyOffsets():
+
+- The overlap check used the current print area of the table, which an
+  earlier call may have narrowed already for a right-aligned image. Then
+  there was no overlap and the narrowing stayed. Check against the print
+  area without fly offsets instead: factor the left/right spacing out of
+  SwTabFrame::Format() into CalcHoriSpacing().
+- In compat mode <= 14 (ADD_FLY_OFFSETS), narrow autofit tables. Writer
+  has no autofit tables, so the DOCX import notes this in the table grab
+  bag ("TableAutoFit": tblLayout is not fixed and tblW has no width).
+  SwCellFrame::Format() keeps the width of all but the last cell of such
+  a narrowed table.
+
+Change-Id: I54fc81b0f32e94fc3ab9f3dac2fdcf11c3a34a38
+---
+ .../layout/data/table-header-fly-fixed.docx   | Bin 0 -> 3829 bytes
+ .../layout/data/table-header-fly-narrow.docx  | Bin 0 -> 3816 bytes
+ .../layout/data/table-header-fly-shift.docx   | Bin 0 -> 3823 bytes
+ sw/qa/core/layout/tabfrm.cxx                  |  67 +++
+ sw/source/core/inc/tabfrm.hxx                 |  10 +-
+ sw/source/core/layout/tabfrm.cxx              | 421 +++++++++++-------
+ .../dmapper/DomainMapperTableHandler.cxx      |   9 +
+ .../dmapper/DomainMapperTableManager.cxx      |   5 +
+ .../writerfilter/dmapper/PropertyMap.hxx      |   2 +
+ .../dmapper/TablePropertiesHandler.cxx        |   3 +
+ 10 files changed, 356 insertions(+), 161 deletions(-)
+ create mode 100644 sw/qa/core/layout/data/table-header-fly-fixed.docx
+ create mode 100644 sw/qa/core/layout/data/table-header-fly-narrow.docx
+ create mode 100644 sw/qa/core/layout/data/table-header-fly-shift.docx
+
+diff --git a/sw/qa/core/layout/data/table-header-fly-fixed.docx b/sw/qa/core/layout/data/table-header-fly-fixed.docx
+new file mode 100644
+index 0000000000000000000000000000000000000000..d1c66866cec825810d39d733789d61406d58e974
+GIT binary patch
+literal 3829
+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
+CH9!{t
+
+literal 0
+HcmV?d00001
+
+diff --git a/sw/qa/core/layout/data/table-header-fly-narrow.docx b/sw/qa/core/layout/data/table-header-fly-narrow.docx
+new file mode 100644
+index 0000000000000000000000000000000000000000..c80e5769734d6e59dd5700f64db5303fd6cc509b
+GIT binary patch
+literal 3816
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/sw/qa/core/layout/data/table-header-fly-shift.docx b/sw/qa/core/layout/data/table-header-fly-shift.docx
+new file mode 100644
+index 0000000000000000000000000000000000000000..aec21424e31899203d360466ac516c591ef2da70
+GIT binary patch
+literal 3823
+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
+BD!2du
+
+literal 0
+HcmV?d00001
+
+diff --git a/sw/qa/core/layout/tabfrm.cxx b/sw/qa/core/layout/tabfrm.cxx
+index d0e6e07a9..e9bfd3bd6 100644
+--- a/sw/qa/core/layout/tabfrm.cxx
++++ b/sw/qa/core/layout/tabfrm.cxx
+@@ -257,6 +257,73 @@ CPPUNIT_TEST_FIXTURE(Test, testSplitFlyHeader)
+     // Then make sure we get one more page, since the first page is now 2 pages:
+     CPPUNIT_ASSERT_EQUAL(9, getPages());
+ }
++
++CPPUNIT_TEST_FIXTURE(Test, testTableBesideHeaderFlyWord2007)
++{
++    // Given a DOCX (compatibilityMode 12) with an image in the header and an autofit table that
++    // overlaps it:
++    createSwDoc("table-header-fly-narrow.docx");
++
++    // When laying out that document:
++    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
++
++    // Then make sure the table is narrowed beside the image, like in Word 2007, and only its last
++    // column gets narrower:
++    SwTwips nFlyLeft
++        = getXPath(pXmlDoc, "//page[1]/header/txt/anchored/fly/infos/bounds", "left").toInt32();
++    SwTwips nFlyBottom
++        = getXPath(pXmlDoc, "//page[1]/header/txt/anchored/fly/infos/bounds", "bottom").toInt32();
++    SwTwips nTabTop = getXPath(pXmlDoc, "//page[1]/body/tab/infos/bounds", "top").toInt32()
++                      + getXPath(pXmlDoc, "//page[1]/body/tab/infos/prtBounds", "top").toInt32();
++    SwTwips nTabRight = getXPath(pXmlDoc, "//page[1]/body/tab/infos/bounds", "left").toInt32()
++                        + getXPath(pXmlDoc, "//page[1]/body/tab/infos/prtBounds", "right").toInt32();
++    // Without the accompanying fix in place, this test would have failed, the table was shifted
++    // below the image.
++    CPPUNIT_ASSERT_LESS(nFlyBottom, nTabTop);
++    CPPUNIT_ASSERT_LESS(nFlyLeft, nTabRight);
++    SwTwips nCell1Width
++        = getXPath(pXmlDoc, "//page[1]/body/tab/row[1]/cell[1]/infos/bounds", "width").toInt32();
++    CPPUNIT_ASSERT_EQUAL(static_cast<SwTwips>(600), nCell1Width);
++}
++
++CPPUNIT_TEST_FIXTURE(Test, testFixedTableBesideHeaderFlyWord2007)
++{
++    // Given a DOCX (compatibilityMode 12) with an image in the header and a fixed layout table that
++    // overlaps it:
++    createSwDoc("table-header-fly-fixed.docx");
++
++    // When laying out that document:
++    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
++
++    // Then make sure the table is shifted below the image, like in Word 2007:
++    SwTwips nFlyBottom
++        = getXPath(pXmlDoc, "//page[1]/header/txt/anchored/fly/infos/bounds", "bottom").toInt32();
++    SwTwips nTabTop = getXPath(pXmlDoc, "//page[1]/body/tab/infos/bounds", "top").toInt32()
++                      + getXPath(pXmlDoc, "//page[1]/body/tab/infos/prtBounds", "top").toInt32();
++    CPPUNIT_ASSERT_GREATEREQUAL(nFlyBottom, nTabTop);
++}
++
++CPPUNIT_TEST_FIXTURE(Test, testTableBelowHeaderFlyWord2013)
++{
++    // Given a DOCX (compatibilityMode 15) with a right-aligned image in the header and a table
++    // that overlaps it:
++    createSwDoc("table-header-fly-shift.docx");
++
++    // When laying out that document:
++    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
++
++    // Then make sure the table is shifted below the image and keeps its width, like in Word 2013:
++    SwTwips nFlyBottom
++        = getXPath(pXmlDoc, "//page[1]/header/txt/anchored/fly/infos/bounds", "bottom").toInt32();
++    SwTwips nTabTop = getXPath(pXmlDoc, "//page[1]/body/tab/infos/bounds", "top").toInt32()
++                      + getXPath(pXmlDoc, "//page[1]/body/tab/infos/prtBounds", "top").toInt32();
++    // Without the accompanying fix in place, this test would have failed, the table was narrowed
++    // beside the image: its print area was already narrowed when checking for the overlap.
++    CPPUNIT_ASSERT_GREATEREQUAL(nFlyBottom, nTabTop);
++    SwTwips nTabPrtWidth
++        = getXPath(pXmlDoc, "//page[1]/body/tab/infos/prtBounds", "width").toInt32();
++    CPPUNIT_ASSERT_GREATER(static_cast<SwTwips>(10700), nTabPrtWidth);
++}
+ }
+ 
+ /* vim:set shiftwidth=4 softtabstop=4 expandtab: */
+diff --git a/sw/source/core/inc/tabfrm.hxx b/sw/source/core/inc/tabfrm.hxx
+index a7fdeefed..23f27936f 100644
+--- a/sw/source/core/inc/tabfrm.hxx
++++ b/sw/source/core/inc/tabfrm.hxx
+@@ -102,6 +102,9 @@ class SW_DLLPUBLIC SwTabFrame final: public SwLayoutFrame, public SwFlowFrame
+ 
+     bool m_bInRecalcLowerRow : 1;
+ 
++    /// Narrowed beside a fly the Word <= 2010 way: only the last column gets narrower.
++    bool m_bNarrowedBesideFly : 1;
++
+     /**
+      * Split() splits the Frame at the specified position: a Follow is
+      * created and constructed and inserted directly after this.
+@@ -185,6 +188,8 @@ public:
+     bool IsRemoveFollowFlowLinePending() const { return m_bRemoveFollowFlowLinePending; }
+     void SetRemoveFollowFlowLinePending(bool bNew) { m_bRemoveFollowFlowLinePending = bNew; }
+ 
++    bool IsNarrowedBesideFly() const { return m_bNarrowedBesideFly; }
++
+     bool IsInRecalcLowerRow() const
+     {
+         return m_bInRecalcLowerRow;
+@@ -222,7 +227,10 @@ public:
+         SwTwips& rUpper,
+         tools::Long& rLeftOffset,
+         tools::Long& rRightOffset,
+-        SwTwips * pSpaceBelowBottom) const;
++        SwTwips * pSpaceBelowBottom, bool* pNarrowedBesideFly = nullptr) const;
++    void CalcHoriSpacing(const SwBorderAttrs& rAttrs, tools::Long nLeftOffset,
++                         tools::Long nRightOffset, SwTwips& rLeftSpacing,
++                         SwTwips& rRightSpacing, bool& rbCheckBrowseWidth) const;
+ 
+     SwTwips CalcHeightOfFirstContentLine() const;
+ 
+diff --git a/sw/source/core/layout/tabfrm.cxx b/sw/source/core/layout/tabfrm.cxx
+index 27de7abc4..4f8eb76fc 100644
+--- a/sw/source/core/layout/tabfrm.cxx
++++ b/sw/source/core/layout/tabfrm.cxx
+@@ -19,6 +19,8 @@
+ 
+ #include <config_wasm_strip.h>
+ 
++#include <optional>
++
+ #include <bodyfrm.hxx>
+ #include <pagefrm.hxx>
+ #include <rootfrm.hxx>
+@@ -41,6 +43,7 @@
+ #include <editeng/brushitem.hxx>
+ #include <editeng/boxitem.hxx>
+ #include <basegfx/range/b1drange.hxx>
++#include <svl/grabbagitem.hxx>
+ #include <fmtlsplt.hxx>
+ #include <fmtrowsplt.hxx>
+ #include <fmtsrnd.hxx>
+@@ -90,6 +93,7 @@ SwTabFrame::SwTabFrame( SwTable &rTab, SwFrame* pSib )
+     , m_bConsiderObjsForMinCellHeight(true)
+     , m_bObjsDoesFit(true)
+     , m_bInRecalcLowerRow(false)
++    , m_bNarrowedBesideFly(false)
+ {
+     mbFixSize = false;     //Don't fall for import filter again.
+     mnFrameType = SwFrameType::Tab;
+@@ -137,6 +141,7 @@ SwTabFrame::SwTabFrame( SwTabFrame &rTab )
+     , m_bConsiderObjsForMinCellHeight(true)
+     , m_bObjsDoesFit(true)
+     , m_bInRecalcLowerRow(false)
++    , m_bNarrowedBesideFly(false)
+ {
+     mbFixSize = false;     //Don't fall for import filter again.
+     mnFrameType = SwFrameType::Tab;
+@@ -3400,6 +3405,16 @@ void SwTabFrame::MakeAll(vcl::RenderContext* pRenderContext)
+         aNotify.SetInvaKeep();
+ }
+ 
++/// Autofit table from DOCX: Writer has no such table property, the import notes it in the grab bag.
++static bool lcl_IsAutoFit(const SwFrameFormat& rTableFormat)
++{
++    const SfxGrabBagItem* pGrabBag = rTableFormat.GetAttrSet().GetItemIfSet(RES_FRMATR_GRABBAG);
++    if (!pGrabBag)
++        return false;
++    auto it = pGrabBag->GetGrabBag().find(u"TableAutoFit"_ustr);
++    return it != pGrabBag->GetGrabBag().end() && it->second.get<bool>();
++}
++
+ static bool IsNextOnSamePage(SwPageFrame const& rPage,
+         SwTabFrame const& rTabFrame, SwTextFrame const& rAnchorFrame)
+ {
+@@ -3419,7 +3434,8 @@ static bool IsNextOnSamePage(SwPageFrame const& rPage,
+ bool SwTabFrame::CalcFlyOffsets( SwTwips& rUpper,
+                                tools::Long& rLeftOffset,
+                                tools::Long& rRightOffset,
+-                               SwTwips *const pSpaceBelowBottom) const
++                               SwTwips *const pSpaceBelowBottom,
++                               bool* pNarrowedBesideFly) const
+ {
+     if (IsHiddenNow())
+     {
+@@ -3464,6 +3480,9 @@ bool SwTabFrame::CalcFlyOffsets( SwTwips& rUpper,
+     }
+ 
+     bool bAddVerticalFlyOffsets = rIDSA.get(DocumentSettingId::ADD_VERTICAL_FLY_OFFSETS);
++    const bool bAddFlyOffsets = rIDSA.get(DocumentSettingId::ADD_FLY_OFFSETS);
++    // Left and right spacing of the print area without fly offsets.
++    std::optional<std::pair<SwTwips, SwTwips>> oNaturalSpacing;
+ 
+     // A fly inside a split-table can cause the table to shift down because of
+     // IsAnLower(). A split-table contains a master SwTabFrame and its follows,
+@@ -3572,11 +3591,22 @@ bool SwTabFrame::CalcFlyOffsets( SwTwips& rUpper,
+             {
+                 // We know that wrapping was requested and the table frame overlaps with
+                 // the fly frame. Check if the print area overlaps with the fly frame as
+-                // well (in case the table does not use all the available width).
+-                basegfx::B1DRange aTabRange(
+-                    aRectFnSet.GetLeft(aRect) + aRectFnSet.GetLeft(getFramePrintArea()),
+-                    aRectFnSet.GetLeft(aRect) + aRectFnSet.GetLeft(getFramePrintArea())
+-                        + aRectFnSet.GetWidth(getFramePrintArea()));
++                // well (in case the table does not use all the available width). Use the
++                // print area without fly offsets: the current one may be narrowed by an
++                // earlier call already, which would hide the overlap.
++                if (!oNaturalSpacing)
++                {
++                    SwBorderAttrAccess aAccess(SwFrame::GetCache(), this);
++                    SwTwips nLeftSpacing = 0;
++                    SwTwips nRightSpacing = 0;
++                    bool bCheckBrowseWidth = false;
++                    CalcHoriSpacing(*aAccess.Get(), 0, 0, nLeftSpacing, nRightSpacing,
++                                    bCheckBrowseWidth);
++                    oNaturalSpacing.emplace(nLeftSpacing, nRightSpacing);
++                }
++                const SwTwips nTabLeft = aRectFnSet.GetLeft(aRect) + oNaturalSpacing->first;
++                const SwTwips nTabRight = aRectFnSet.GetRight(aRect) - oNaturalSpacing->second;
++                basegfx::B1DRange aTabRange(nTabLeft, std::max(nTabLeft, nTabRight));
+ 
+                 // Ignore spacing when determining the left/right edge of the fly, like
+                 // Word does.
+@@ -3588,6 +3618,41 @@ bool SwTabFrame::CalcFlyOffsets( SwTwips& rUpper,
+                 // of the first table row.
+                 bShiftDown = aTabRange.overlaps(aFlyRange);
+ 
++                // Word <= 2010 (DOCX compatibilityMode <= 14) narrows the table instead, so
++                // that the text area of its cells ends where the wrap area of the fly
++                // starts. The rows of a table continued on a next page are shifted down.
++                if (bShiftDown && bAddFlyOffsets && !IsFollow() && !bSplitFly
++                    && lcl_IsAutoFit(*GetTable()->GetFrameFormat()))
++                {
++                    const SwTableBoxes& rBoxes = GetTable()->GetTabLines()[0]->GetTabBoxes();
++                    const bool bFlyOnRight
++                        = aFlyRange.getCenter() >= aTabRange.getCenter();
++                    SwTwips nNewLeft = nTabLeft;
++                    SwTwips nNewRight = nTabRight;
++                    if (bFlyOnRight)
++                        nNewRight = aRectFnSet.GetLeft(aFlyRect)
++                                    + rBoxes.back()->GetFrameFormat()->GetBox().GetDistance(
++                                        SvxBoxItemLine::RIGHT);
++                    else
++                        nNewLeft = aRectFnSet.GetRight(aFlyRect)
++                                   - rBoxes.front()->GetFrameFormat()->GetBox().GetDistance(
++                                       SvxBoxItemLine::LEFT);
++                    // Shift down if too little space is left beside the fly.
++                    if (2 * (nNewRight - nNewLeft) >= nTabRight - nTabLeft)
++                    {
++                        if (bFlyOnRight)
++                            rRightOffset = std::max(rRightOffset,
++                                                    aRectFnSet.GetRight(aRect) - nNewRight);
++                        else
++                            rLeftOffset = std::max(rLeftOffset,
++                                                   nNewLeft - aRectFnSet.GetLeft(aRect));
++                        bInvalidatePrtArea = true;
++                        if (pNarrowedBesideFly)
++                            *pNarrowedBesideFly = true;
++                        continue;
++                    }
++                }
++
+                 if (bSplitFly && pFly->GetAnchorFrame()->GetUpper() == GetUpper())
+                 {
+                     // Split fly followed by an inline table. Check if we have enough space to shift
+@@ -3693,6 +3758,172 @@ bool SwTabFrame::CalcFlyOffsets( SwTwips& rUpper,
+     return bInvalidatePrtArea;
+ }
+ 
++/// Calculates the left and right spacing of the print area, given the offsets caused by flys.
++void SwTabFrame::CalcHoriSpacing(const SwBorderAttrs& rAttrs, tools::Long nLeftOffset,
++                                 tools::Long nRightOffset, SwTwips& rLeftSpacing,
++                                 SwTwips& rRightSpacing, bool& rbCheckBrowseWidth) const
++{
++    SwRectFnSet aRectFnSet(*this);
++    const SwTwips nMax = aRectFnSet.GetWidth(getFrameArea());
++    const SwBorderAttrs* pAttrs = &rAttrs;
++    // OD 14.03.2003 #i9040# - adjust variable names.
++    const SwTwips nLeftLine  = pAttrs->CalcLeftLine();
++    const SwTwips nRightLine = pAttrs->CalcRightLine();
++
++    // The width possibly is a percentage value. If the table is inside
++    // something else, the value refers to the environment. If it's in the
++    // body then in the BrowseView the value refers to the screen width.
++    const SwFormatFrameSize &rSz = GetFormat()->GetFrameSize();
++    // OD 14.03.2003 #i9040# - adjust variable name.
++    const SwTwips nWishedTableWidth = CalcRel( rSz );
++
++    bool bCheckBrowseWidth = false;
++
++    // OD 14.03.2003 #i9040# - insert new variables for left/right spacing.
++    SwTwips nLeftSpacing  = 0;
++    SwTwips nRightSpacing = 0;
++    switch ( GetFormat()->GetHoriOrient().GetHoriOrient() )
++    {
++        case text::HoriOrientation::LEFT:
++            {
++                // left indent:
++                nLeftSpacing = nLeftLine + nLeftOffset;
++                // OD 06.03.2003 #i9040# - correct calculation of right indent:
++                // - Consider right indent given by right line attributes.
++                // - Consider negative right indent.
++                // wished right indent determined by wished table width and
++                // left offset given by surround fly frames on the left:
++                const SwTwips nWishRight = nMax - nWishedTableWidth - nLeftOffset;
++                if ( nRightOffset > 0 )
++                {
++                    // surrounding fly frames on the right
++                    // -> right indent is maximum of given right offset
++                    //    and wished right offset.
++                    nRightSpacing = nRightLine + std::max( SwTwips(nRightOffset), nWishRight );
++                }
++                else
++                {
++                    // no surrounding fly frames on the right
++                    // If intrinsic right indent (intrinsic means not considering
++                    // determined left indent) is negative,
++                    //      then hold this intrinsic indent,
++                    //      otherwise non negative wished right indent is hold.
++                    nRightSpacing = nRightLine +
++                                    ( ( (nWishRight+nLeftOffset) < 0 ) ?
++                                        (nWishRight+nLeftOffset) :
++                                        std::max( SwTwips(0), nWishRight ) );
++                }
++            }
++            break;
++        case text::HoriOrientation::RIGHT:
++            {
++                // right indent:
++                nRightSpacing = nRightLine + nRightOffset;
++                // OD 06.03.2003 #i9040# - correct calculation of left indent:
++                // - Consider left indent given by left line attributes.
++                // - Consider negative left indent.
++                // wished left indent determined by wished table width and
++                // right offset given by surrounding fly frames on the right:
++                const SwTwips nWishLeft = nMax - nWishedTableWidth - nRightOffset;
++                if ( nLeftOffset > 0 )
++                {
++                    // surrounding fly frames on the left
++                    // -> right indent is maximum of given left offset
++                    //    and wished left offset.
++                    nLeftSpacing = nLeftLine + std::max( SwTwips(nLeftOffset), nWishLeft );
++                }
++                else
++                {
++                    // no surrounding fly frames on the left
++                    // If intrinsic left indent (intrinsic = not considering
++                    // determined right indent) is negative,
++                    //      then hold this intrinsic indent,
++                    //      otherwise non negative wished left indent is hold.
++                    nLeftSpacing = nLeftLine +
++                                   ( ( (nWishLeft+nRightOffset) < 0 ) ?
++                                       (nWishLeft+nRightOffset) :
++                                       std::max( SwTwips(0), nWishLeft ) );
++                }
++            }
++            break;
++        case text::HoriOrientation::CENTER:
++            {
++                // OD 07.03.2003 #i9040# - consider left/right line attribute.
++                const SwTwips nCenterSpacing = ( nMax - nWishedTableWidth ) / 2;
++                nLeftSpacing = nLeftLine +
++                               ( (nLeftOffset > 0) ?
++                                 std::max( nCenterSpacing, SwTwips(nLeftOffset) ) :
++                                 nCenterSpacing );
++                nRightSpacing = nRightLine +
++                                ( (nRightOffset > 0) ?
++                                  std::max( nCenterSpacing, SwTwips(nRightOffset) ) :
++                                  nCenterSpacing );
++            }
++            break;
++        case text::HoriOrientation::FULL:
++                //This things grows over the whole width.
++                //Only the free space needed for the border is taken into
++                //account. The attribute values of LRSpace are ignored
++                //intentionally.
++                bCheckBrowseWidth = true;
++                nLeftSpacing  = nLeftLine + nLeftOffset;
++                nRightSpacing = nRightLine + nRightOffset;
++            break;
++        case text::HoriOrientation::NONE:
++            {
++                // The margins are defined by the LRSpace attribute.
++                nLeftSpacing = pAttrs->CalcLeft( this );
++                if( nLeftOffset )
++                {
++                    // OD 07.03.2003 #i9040# - surround fly frames only, if
++                    // they overlap with the table.
++                    // Thus, take maximum of left spacing and left offset.
++                    // OD 10.03.2003 #i9040# - consider left line attribute.
++                    nLeftSpacing = std::max( nLeftSpacing, SwTwips( nLeftOffset + nLeftLine ) );
++                }
++                // OD 23.01.2003 #106895# - add 1st param to <SwBorderAttrs::CalcRight(..)>
++                nRightSpacing = pAttrs->CalcRight( this );
++                if( nRightOffset )
++                {
++                    // OD 07.03.2003 #i9040# - surround fly frames only, if
++                    // they overlap with the table.
++                    // Thus, take maximum of right spacing and right offset.
++                    // OD 10.03.2003 #i9040# - consider right line attribute.
++                    nRightSpacing = std::max( nRightSpacing, SwTwips( nRightOffset + nRightLine ) );
++                }
++            }
++            break;
++        case text::HoriOrientation::LEFT_AND_WIDTH:
++            {
++                // count left border and width (Word specialty)
++                // OD 10.03.2003 #i9040# - no width alignment in online mode.
++                //bCheckBrowseWidth = true;
++                nLeftSpacing = pAttrs->CalcLeft( this );
++                if( nLeftOffset )
++                {
++                    // OD 10.03.2003 #i9040# - surround fly frames only, if
++                    // they overlap with the table.
++                    // Thus, take maximum of right spacing and right offset.
++                    // OD 10.03.2003 #i9040# - consider left line attribute.
++                    nLeftSpacing = std::max( nLeftSpacing, SwTwips( pAttrs->CalcLeftLine() + nLeftOffset ) );
++                }
++                // OD 10.03.2003 #i9040# - consider right and left line attribute.
++                const SwTwips nWishRight =
++                        nMax - (nLeftSpacing-pAttrs->CalcLeftLine()) - nWishedTableWidth;
++                nRightSpacing = nRightLine +
++                                ( (nRightOffset > 0) ?
++                                  std::max( nWishRight, SwTwips(nRightOffset) ) :
++                                  nWishRight );
++            }
++            break;
++        default:
++            OSL_FAIL( "Invalid orientation for table." );
++    }
++    rLeftSpacing = nLeftSpacing;
++    rRightSpacing = nRightSpacing;
++    rbCheckBrowseWidth = bCheckBrowseWidth;
++}
++
+ /// "Formats" the frame; Frame and PrtArea.
+ /// The fixed size is not adjusted here.
+ void SwTabFrame::Format( vcl::RenderContext* /*pRenderContext*/, const SwBorderAttrs *pAttrs )
+@@ -3723,10 +3954,20 @@ void SwTabFrame::Format( vcl::RenderContext* /*pRenderContext*/, const SwBorderA
+     //    those are right or left aligned, those set the minimum for the margins
+     tools::Long nTmpRight = -1000000,
+          nLeftOffset  = 0;
+-    if (CalcFlyOffsets(nUpper, nLeftOffset, nTmpRight, nullptr))
++    bool bNarrowedBesideFly = false;
++    if (CalcFlyOffsets(nUpper, nLeftOffset, nTmpRight, nullptr, &bNarrowedBesideFly))
+     {
+         setFramePrintAreaValid(false);
+     }
++    if (bNarrowedBesideFly != m_bNarrowedBesideFly)
++    {
++        m_bNarrowedBesideFly = bNarrowedBesideFly;
++        setFramePrintAreaValid(false);
++        for (SwFrame* pRow = GetLower(); pRow; pRow = pRow->GetNext())
++            for (SwFrame* pCell = static_cast<SwLayoutFrame*>(pRow)->Lower(); pCell;
++                 pCell = pCell->GetNext())
++                pCell->InvalidateSize_();
++    }
+ 
+     tools::Long nRightOffset = std::max( tools::Long(0), nTmpRight );
+ 
+@@ -3750,159 +3991,10 @@ void SwTabFrame::Format( vcl::RenderContext* /*pRenderContext*/, const SwBorderA
+         const SwTwips nOldHeight = aRectFnSet.GetHeight(getFramePrintArea());
+         const SwTwips nMax = aRectFnSet.GetWidth(getFrameArea());
+ 
+-        // OD 14.03.2003 #i9040# - adjust variable names.
+-        const SwTwips nLeftLine  = pAttrs->CalcLeftLine();
+-        const SwTwips nRightLine = pAttrs->CalcRightLine();
+-
+-        // The width possibly is a percentage value. If the table is inside
+-        // something else, the value refers to the environment. If it's in the
+-        // body then in the BrowseView the value refers to the screen width.
+-        const SwFormatFrameSize &rSz = GetFormat()->GetFrameSize();
+-        // OD 14.03.2003 #i9040# - adjust variable name.
+-        const SwTwips nWishedTableWidth = CalcRel( rSz );
+-
+-        bool bCheckBrowseWidth = false;
+-
+-        // OD 14.03.2003 #i9040# - insert new variables for left/right spacing.
+-        SwTwips nLeftSpacing  = 0;
++        SwTwips nLeftSpacing = 0;
+         SwTwips nRightSpacing = 0;
+-        switch ( GetFormat()->GetHoriOrient().GetHoriOrient() )
+-        {
+-            case text::HoriOrientation::LEFT:
+-                {
+-                    // left indent:
+-                    nLeftSpacing = nLeftLine + nLeftOffset;
+-                    // OD 06.03.2003 #i9040# - correct calculation of right indent:
+-                    // - Consider right indent given by right line attributes.
+-                    // - Consider negative right indent.
+-                    // wished right indent determined by wished table width and
+-                    // left offset given by surround fly frames on the left:
+-                    const SwTwips nWishRight = nMax - nWishedTableWidth - nLeftOffset;
+-                    if ( nRightOffset > 0 )
+-                    {
+-                        // surrounding fly frames on the right
+-                        // -> right indent is maximum of given right offset
+-                        //    and wished right offset.
+-                        nRightSpacing = nRightLine + std::max( SwTwips(nRightOffset), nWishRight );
+-                    }
+-                    else
+-                    {
+-                        // no surrounding fly frames on the right
+-                        // If intrinsic right indent (intrinsic means not considering
+-                        // determined left indent) is negative,
+-                        //      then hold this intrinsic indent,
+-                        //      otherwise non negative wished right indent is hold.
+-                        nRightSpacing = nRightLine +
+-                                        ( ( (nWishRight+nLeftOffset) < 0 ) ?
+-                                            (nWishRight+nLeftOffset) :
+-                                            std::max( SwTwips(0), nWishRight ) );
+-                    }
+-                }
+-                break;
+-            case text::HoriOrientation::RIGHT:
+-                {
+-                    // right indent:
+-                    nRightSpacing = nRightLine + nRightOffset;
+-                    // OD 06.03.2003 #i9040# - correct calculation of left indent:
+-                    // - Consider left indent given by left line attributes.
+-                    // - Consider negative left indent.
+-                    // wished left indent determined by wished table width and
+-                    // right offset given by surrounding fly frames on the right:
+-                    const SwTwips nWishLeft = nMax - nWishedTableWidth - nRightOffset;
+-                    if ( nLeftOffset > 0 )
+-                    {
+-                        // surrounding fly frames on the left
+-                        // -> right indent is maximum of given left offset
+-                        //    and wished left offset.
+-                        nLeftSpacing = nLeftLine + std::max( SwTwips(nLeftOffset), nWishLeft );
+-                    }
+-                    else
+-                    {
+-                        // no surrounding fly frames on the left
+-                        // If intrinsic left indent (intrinsic = not considering
+-                        // determined right indent) is negative,
+-                        //      then hold this intrinsic indent,
+-                        //      otherwise non negative wished left indent is hold.
+-                        nLeftSpacing = nLeftLine +
+-                                       ( ( (nWishLeft+nRightOffset) < 0 ) ?
+-                                           (nWishLeft+nRightOffset) :
+-                                           std::max( SwTwips(0), nWishLeft ) );
+-                    }
+-                }
+-                break;
+-            case text::HoriOrientation::CENTER:
+-                {
+-                    // OD 07.03.2003 #i9040# - consider left/right line attribute.
+-                    const SwTwips nCenterSpacing = ( nMax - nWishedTableWidth ) / 2;
+-                    nLeftSpacing = nLeftLine +
+-                                   ( (nLeftOffset > 0) ?
+-                                     std::max( nCenterSpacing, SwTwips(nLeftOffset) ) :
+-                                     nCenterSpacing );
+-                    nRightSpacing = nRightLine +
+-                                    ( (nRightOffset > 0) ?
+-                                      std::max( nCenterSpacing, SwTwips(nRightOffset) ) :
+-                                      nCenterSpacing );
+-                }
+-                break;
+-            case text::HoriOrientation::FULL:
+-                    //This things grows over the whole width.
+-                    //Only the free space needed for the border is taken into
+-                    //account. The attribute values of LRSpace are ignored
+-                    //intentionally.
+-                    bCheckBrowseWidth = true;
+-                    nLeftSpacing  = nLeftLine + nLeftOffset;
+-                    nRightSpacing = nRightLine + nRightOffset;
+-                break;
+-            case text::HoriOrientation::NONE:
+-                {
+-                    // The margins are defined by the LRSpace attribute.
+-                    nLeftSpacing = pAttrs->CalcLeft( this );
+-                    if( nLeftOffset )
+-                    {
+-                        // OD 07.03.2003 #i9040# - surround fly frames only, if
+-                        // they overlap with the table.
+-                        // Thus, take maximum of left spacing and left offset.
+-                        // OD 10.03.2003 #i9040# - consider left line attribute.
+-                        nLeftSpacing = std::max( nLeftSpacing, SwTwips( nLeftOffset + nLeftLine ) );
+-                    }
+-                    // OD 23.01.2003 #106895# - add 1st param to <SwBorderAttrs::CalcRight(..)>
+-                    nRightSpacing = pAttrs->CalcRight( this );
+-                    if( nRightOffset )
+-                    {
+-                        // OD 07.03.2003 #i9040# - surround fly frames only, if
+-                        // they overlap with the table.
+-                        // Thus, take maximum of right spacing and right offset.
+-                        // OD 10.03.2003 #i9040# - consider right line attribute.
+-                        nRightSpacing = std::max( nRightSpacing, SwTwips( nRightOffset + nRightLine ) );
+-                    }
+-                }
+-                break;
+-            case text::HoriOrientation::LEFT_AND_WIDTH:
+-                {
+-                    // count left border and width (Word specialty)
+-                    // OD 10.03.2003 #i9040# - no width alignment in online mode.
+-                    //bCheckBrowseWidth = true;
+-                    nLeftSpacing = pAttrs->CalcLeft( this );
+-                    if( nLeftOffset )
+-                    {
+-                        // OD 10.03.2003 #i9040# - surround fly frames only, if
+-                        // they overlap with the table.
+-                        // Thus, take maximum of right spacing and right offset.
+-                        // OD 10.03.2003 #i9040# - consider left line attribute.
+-                        nLeftSpacing = std::max( nLeftSpacing, SwTwips( pAttrs->CalcLeftLine() + nLeftOffset ) );
+-                    }
+-                    // OD 10.03.2003 #i9040# - consider right and left line attribute.
+-                    const SwTwips nWishRight =
+-                            nMax - (nLeftSpacing-pAttrs->CalcLeftLine()) - nWishedTableWidth;
+-                    nRightSpacing = nRightLine +
+-                                    ( (nRightOffset > 0) ?
+-                                      std::max( nWishRight, SwTwips(nRightOffset) ) :
+-                                      nWishRight );
+-                }
+-                break;
+-            default:
+-                OSL_FAIL( "Invalid orientation for table." );
+-        }
++        bool bCheckBrowseWidth = false;
++        CalcHoriSpacing(*pAttrs, nLeftOffset, nRightOffset, nLeftSpacing, nRightSpacing, bCheckBrowseWidth);
+ 
+         // #i26250# - extend bottom printing area, if table
+         // is last content inside a table cell.
+@@ -6142,7 +6234,16 @@ void SwCellFrame::Format( vcl::RenderContext* /*pRenderContext*/, const SwBorder
+             OSL_ENSURE( nWidth > 0, "Box without width" );
+ 
+             const tools::Long nPrtWidth = aRectFnSet.GetWidth(pTab->getFramePrintArea());
+-            if ( nWish != nPrtWidth )
++            // A table narrowed beside a fly by Word <= 2010 keeps the width of all but the last
++            // column, as long as the last one keeps at least half of its width.
++            bool bKeepWidth = false;
++            if (pTab->IsNarrowedBesideFly() && nPrtWidth < nWish)
++            {
++                const SwTableBoxes& rBoxes = GetTabBox().GetUpper()->GetTabBoxes();
++                const SwTwips nLastWidth = rBoxes.back()->GetFrameFormat()->GetFrameSize().GetWidth();
++                bKeepWidth = 2 * (nLastWidth - (nWish - nPrtWidth)) >= nLastWidth;
++            }
++            if ( nWish != nPrtWidth && !bKeepWidth )
+             {
+                 // Avoid rounding problems, at least for the new table model
+                 if ( pTab->GetTable()->IsNewModel() )
+diff --git a/sw/source/writerfilter/dmapper/DomainMapperTableHandler.cxx b/sw/source/writerfilter/dmapper/DomainMapperTableHandler.cxx
+index 7b21d26c6..2b058e4b2 100644
+--- a/sw/source/writerfilter/dmapper/DomainMapperTableHandler.cxx
++++ b/sw/source/writerfilter/dmapper/DomainMapperTableHandler.cxx
+@@ -370,6 +370,15 @@ TableStyleSheetEntry * DomainMapperTableHandler::endTableGetTableStyle(TableInfo
+             aGrabBag[u"TablePosition"_ustr] = uno::Any();
+         }
+ 
++        // Writer has no autofit tables, but the layout needs to know: Word <= 2010 narrows an
++        // autofit table without a preferred width beside a fly, and moves other tables below it.
++        sal_Int32 nLayoutType = 0;
++        sal_Int32 nPreferredWidth = 0;
++        m_aTableProperties->getValue(TablePropertyMap::TABLE_LAYOUT, nLayoutType);
++        m_aTableProperties->getValue(TablePropertyMap::TABLE_PREFERRED_WIDTH, nPreferredWidth);
++        aGrabBag[u"TableAutoFit"_ustr]
++            <<= nLayoutType != NS_ooxml::LN_Value_doc_ST_TblLayout_fixed && !nPreferredWidth;
++
+         // This one is simply preserving all the table look attributes for a round-trip.
+         const std::optional<PropertyMap::Property> oTableLook
+             = m_aTableProperties->getProperty(META_PROP_TABLE_LOOK);
+diff --git a/sw/source/writerfilter/dmapper/DomainMapperTableManager.cxx b/sw/source/writerfilter/dmapper/DomainMapperTableManager.cxx
+index bc2595a0a..d698ca8b2 100644
+--- a/sw/source/writerfilter/dmapper/DomainMapperTableManager.cxx
++++ b/sw/source/writerfilter/dmapper/DomainMapperTableManager.cxx
+@@ -178,6 +178,11 @@ bool DomainMapperTableManager::sprm(Sprm & rSprm)
+                     else
+                     {
+                         m_nTableWidth = pMeasureHandler->getMeasureValue();
++                        const bool bPreferredWidth
++                            = pMeasureHandler->getValue()
++                              && sal::static_int_cast<Id>(pMeasureHandler->getUnit())
++                                     != NS_ooxml::LN_Value_ST_TblWidth_auto;
++                        pPropMap->setValue(TablePropertyMap::TABLE_PREFERRED_WIDTH, bPreferredWidth);
+                         if( m_nTableWidth )
+                         {
+                             pPropMap->setValue( TablePropertyMap::TABLE_WIDTH_TYPE, text::SizeType::FIX );
+diff --git a/sw/source/writerfilter/dmapper/PropertyMap.hxx b/sw/source/writerfilter/dmapper/PropertyMap.hxx
+index 23d1475e3..22431d0de 100644
+--- a/sw/source/writerfilter/dmapper/PropertyMap.hxx
++++ b/sw/source/writerfilter/dmapper/PropertyMap.hxx
+@@ -621,6 +621,8 @@ public:
+         TABLE_WIDTH_TYPE,
+         LEFT_MARGIN,
+         HORI_ORIENT,
++        TABLE_LAYOUT,
++        TABLE_PREFERRED_WIDTH,
+         TablePropertyMapTarget_MAX
+     };
+ 
+diff --git a/sw/source/writerfilter/dmapper/TablePropertiesHandler.cxx b/sw/source/writerfilter/dmapper/TablePropertiesHandler.cxx
+index 5e5f85aa2..03314184f 100644
+--- a/sw/source/writerfilter/dmapper/TablePropertiesHandler.cxx
++++ b/sw/source/writerfilter/dmapper/TablePropertiesHandler.cxx
+@@ -213,6 +213,9 @@ namespace writerfilter::dmapper {
+                 DomainMapperTableManager* pManager = dynamic_cast<DomainMapperTableManager*>(m_pTableManager);
+                 if (pManager)
+                     pManager->SetLayoutType(static_cast<sal_uInt32>(nIntValue));
++                TablePropertyMapPtr pPropMap(new TablePropertyMap);
++                pPropMap->setValue(TablePropertyMap::TABLE_LAYOUT, nIntValue);
++                insertTableProps(pPropMap);
+             }
+             break;
+             case NS_ooxml::LN_CT_TblPrEx_tblBorders:
