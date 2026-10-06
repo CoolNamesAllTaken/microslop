@@ -1,0 +1,152 @@
+From e69f90b0254781d84251f5fe6fa1d92257e88b2f Mon Sep 17 00:00:00 2001
+From: Claud McClaudeson <claud@pantsforbirds.com>
+Date: Tue, 6 Oct 2026 05:08:23 +0000
+Subject: [PATCH 1/3] sw: move back paragraph that wraps around a header image
+
+A paragraph moved to the next page and formatted there beside a wrapped
+image anchored in the page header (2 lines) never moved back to the
+previous page, even if it fits there as 1 line.
+
+SwFlowFrame::BwdMoveNecessary() ignored objects anchored in the page
+header or footer, since they are in a different context. So
+ShouldBwdMoved() used WouldFit() with the current formatting instead of
+a test format at the new place, and widow control refused the move.
+
+Body text wraps around header/footer objects (see SwTextFly::GetTop())
+unless USE_FORMER_TEXT_WRAPPING is set: report such objects as needing
+a test format, too.
+
+Change-Id: Ie3d3a23843cb77c066563dd3ca3603021692dff4
+---
+ sw/qa/core/layout/calcmove.cxx                |  25 ++++++++++++++++++
+ .../layout/data/header-fly-move-back.docx     | Bin 0 -> 3729 bytes
+ sw/source/core/layout/flowfrm.cxx             |   8 +++++-
+ 3 files changed, 32 insertions(+), 1 deletion(-)
+ create mode 100644 sw/qa/core/layout/data/header-fly-move-back.docx
+
+diff --git a/sw/qa/core/layout/calcmove.cxx b/sw/qa/core/layout/calcmove.cxx
+index 3606c70eb..e203b3264 100644
+--- a/sw/qa/core/layout/calcmove.cxx
++++ b/sw/qa/core/layout/calcmove.cxx
+@@ -129,6 +129,31 @@ CPPUNIT_TEST_FIXTURE(Test, testHideWhitespaceGrowingLastPage)
+     // i.e. the page was growing instead of creating a new page when it already had a max size.
+     CPPUNIT_ASSERT_EQUAL(2, getPages());
+ }
++
++CPPUNIT_TEST_FIXTURE(Test, testHeaderFlyMoveBack)
++{
++    // Given a document with an image in the page header, and a paragraph at the top of page 2 that
++    // wraps around the image as 2 lines, but would be 1 line at the bottom of page 1:
++    createSwDoc("header-fly-move-back.docx");
++    CPPUNIT_ASSERT_EQUAL(2, getPages());
++
++    // When deleting the last line of the paragraph before it, so there is room for 1 line on page 1:
++    uno::Reference<text::XTextRange> xPara = getParagraph(55);
++    uno::Reference<text::XText> xText = xPara->getText();
++    uno::Reference<text::XTextCursor> xCursor = xText->createTextCursorByRange(xPara->getEnd());
++    // Select the line break and "Delete me".
++    xCursor->goLeft(10, /*bExpand=*/true);
++    xCursor->setString(OUString());
++    calcLayout();
++
++    // Then make sure the paragraph moves back to page 1:
++    // Without the accompanying fix in place, this test would have failed with:
++    // - Expected: 1
++    // - Actual  : 2
++    // i.e. the paragraph stayed on page 2, since its formatting beside the image was used to check
++    // if it fits page 1.
++    CPPUNIT_ASSERT_EQUAL(1, getPages());
++}
+ }
+ 
+ /* vim:set shiftwidth=4 softtabstop=4 expandtab: */
+diff --git a/sw/qa/core/layout/data/header-fly-move-back.docx b/sw/qa/core/layout/data/header-fly-move-back.docx
+new file mode 100644
+index 0000000000000000000000000000000000000000..ab58093ba55f85e7fac659c9bcea917a05875b46
+GIT binary patch
+literal 3729
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/sw/source/core/layout/flowfrm.cxx b/sw/source/core/layout/flowfrm.cxx
+index 4dd164751..d1fba5153 100644
+--- a/sw/source/core/layout/flowfrm.cxx
++++ b/sw/source/core/layout/flowfrm.cxx
+@@ -483,8 +483,14 @@ sal_uInt8 SwFlowFrame::BwdMoveNecessary( const SwPageFrame *pPage, const SwRect
+                         }
+                     }
+                 }
+-                else
++                else if (!pAnchor->FindFooterOrHeader() || !m_rThis.IsInDocBody()
++                         || m_rThis.GetUpper()->GetFormat()->getIDocumentSettingAccess().get(
++                             DocumentSettingId::USE_FORMER_TEXT_WRAPPING))
+                     continue;
++                // else: body text wraps around objects in the page header/footer (see
++                // SwTextFly::GetTop()), so the current formatting depends on them and WouldFit()
++                // is not enough: e.g. a paragraph with 2 lines beside a header image may fit as
++                // 1 line on the previous page.
+ 
+                 nRet |= 2;
+             }

@@ -1,0 +1,106 @@
+# Builds headless LibreOffice with patches/libreoffice/*.patch for ubuntu-24.04 x86_64 and
+# publishes libreoffice-<version>-<rev>-linux-x86_64.tar.gz as a release asset.
+# A cold build takes about 2 h 15 min; ccache makes reruns much faster. The build step stops at 5 h so
+# ccache is still saved, and a rerun picks up where it left off.
+name: build-libreoffice
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a release
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    permissions:
+      contents: write
+    env:
+      WORK: /mnt/lo
+      CCACHE_DIR: /mnt/ccache
+      CCACHE_MAXSIZE: 5G
+      CCACHE_COMPRESS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read versions
+        run: grep -v "^#" tools/build-lo/versions.env >> "$GITHUB_ENV"
+
+      # /mnt has ~70 GB free on hosted runners; the build needs about 25 GB.
+      - name: Prepare disk
+        run: |
+          sudo mkdir -p "$WORK" "$CCACHE_DIR"
+          sudo chown "$USER" "$WORK" "$CCACHE_DIR"
+          df -h / /mnt
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends autoconf automake bison ccache flex \
+            gperf libfontconfig-dev libfreetype-dev nasm pkg-config uuid-dev zip zlib1g-dev
+
+      - name: Restore source and external tarballs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.WORK }}/libreoffice-${{ env.LO_VERSION }}.tar.xz
+            ${{ env.WORK }}/tarballs
+          key: lo-src-${{ env.LO_VERSION }}
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: lo-ccache-${{ env.LO_VERSION }}-${{ hashFiles('patches/libreoffice/*.patch', 'tools/build-lo/*') }}
+          restore-keys: lo-ccache-${{ env.LO_VERSION }}-
+
+      - name: Build
+        timeout-minutes: 300
+        run: |
+          export CC="ccache gcc" CXX="ccache g++"
+          ccache -z
+          tools/build-lo/build.sh "$WORK"
+          ccache -s
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: lo-ccache-${{ env.LO_VERSION }}-${{ hashFiles('patches/libreoffice/*.patch', 'tools/build-lo/*') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Smoke test
+        run: |
+          name="libreoffice-$LO_VERSION-$MS_REV-linux-x86_64"
+          mkdir -p ~/t && tar -C ~/t -xzf "$WORK/$name.tar.gz"
+          printf 'Hello\n' > ~/t/hello.txt
+          ~/t/libreoffice/program/soffice --headless --convert-to docx --outdir ~/t ~/t/hello.txt
+          ~/t/libreoffice/program/soffice --headless --convert-to pdf --outdir ~/t ~/t/hello.docx
+          test -s ~/t/hello.pdf
+          ~/t/libreoffice/program/soffice --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libreoffice-${{ env.LO_VERSION }}-${{ env.MS_REV }}
+          path: ${{ env.WORK }}/libreoffice-*-linux-x86_64.tar.gz*
+          compression-level: 0
+
+      - name: Publish release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="libreoffice-$LO_VERSION-$MS_REV"
+          name="libreoffice-$LO_VERSION-$MS_REV-linux-x86_64"
+          sha=$(cut -d' ' -f1 "$WORK/$name.tar.gz.sha256")
+          notes="Headless LibreOffice $LO_VERSION for Ubuntu 24.04 x86_64 with patches/libreoffice from ${GITHUB_SHA::8}. sha256: $sha"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" "$WORK/$name.tar.gz" "$WORK/$name.tar.gz.sha256" --clobber
+            gh release edit "$tag" --notes "$notes"
+          else
+            gh release create "$tag" "$WORK/$name.tar.gz" "$WORK/$name.tar.gz.sha256" \
+              --title "LibreOffice $LO_VERSION ($MS_REV)" --notes "$notes" --target "$GITHUB_SHA"
+          fi

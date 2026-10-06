@@ -1,0 +1,229 @@
+From 447d9ac51d67f2b5463a58591409bf3ef5d8ae7a Mon Sep 17 00:00:00 2001
+From: Claud McClaudeson <claud@pantsforbirds.com>
+Date: Tue, 6 Oct 2026 05:08:27 +0000
+Subject: [PATCH 3/3] sw DOCX: widow and orphan control in split table rows,
+ like Word 2013
+
+Word 2013+ (DOCX compatibilityMode 15) applies widow and orphan control
+to paragraphs in table rows split across pages: a 4-line paragraph with
+room for 3 lines is split 2+2. Word <= 2010 doesn't, and splits it 3+1.
+
+Writer only did this in floating tables. Do it in all tables for Word
+2013+ documents (TABLE_ROW_KEEP without ADD_FLY_OFFSETS).
+
+Change-Id: I45125a6aea213eeb2feea3d7ebb1d2a90b5a5316
+---
+ .../text/data/table-split-row-widow-12.docx   | Bin 0 -> 2658 bytes
+ .../text/data/table-split-row-widow-15.docx   | Bin 0 -> 2659 bytes
+ sw/qa/core/text/widorp.cxx                    |  29 ++++++++++++++++++
+ sw/qa/extras/layout/layout6.cxx               |  18 +++++------
+ sw/source/core/text/widorp.cxx                |  16 +++++-----
+ 5 files changed, 43 insertions(+), 20 deletions(-)
+ create mode 100644 sw/qa/core/text/data/table-split-row-widow-12.docx
+ create mode 100644 sw/qa/core/text/data/table-split-row-widow-15.docx
+
+diff --git a/sw/qa/core/text/data/table-split-row-widow-12.docx b/sw/qa/core/text/data/table-split-row-widow-12.docx
+new file mode 100644
+index 0000000000000000000000000000000000000000..9dd0feb4860d102bbb8fdf117dfe0d3bce8070a3
+GIT binary patch
+literal 2658
+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
+JX%qg^`v=$LVV3{^
+
+literal 0
+HcmV?d00001
+
+diff --git a/sw/qa/core/text/data/table-split-row-widow-15.docx b/sw/qa/core/text/data/table-split-row-widow-15.docx
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb4afea79cd8392720d5fd817f59def82f201492
+GIT binary patch
+literal 2659
+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
+N-*`ShEuvp~e*@`7S-t=O
+
+literal 0
+HcmV?d00001
+
+diff --git a/sw/qa/core/text/widorp.cxx b/sw/qa/core/text/widorp.cxx
+index 46e559b1e..99c102462 100644
+--- a/sw/qa/core/text/widorp.cxx
++++ b/sw/qa/core/text/widorp.cxx
+@@ -150,6 +150,35 @@ CPPUNIT_TEST_FIXTURE(Test, testFloattableHeadingSplitHyphen)
+     CPPUNIT_ASSERT(!pPage4->GetSortedObjs());
+     CPPUNIT_ASSERT(pPage4->FindFootnoteCont());
+ }
++
++CPPUNIT_TEST_FIXTURE(Test, testSplitRowWidowsWord2013)
++{
++    // Given a DOCX (compatibilityMode 15) with a table row at the page end, its cell has a 4-line
++    // paragraph and there is room for 3 lines:
++    createSwDoc("table-split-row-widow-15.docx");
++
++    // When laying out that document:
++    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
++
++    // Then make sure widow control applies in the split row, like in Word 2013:
++    // Without the accompanying fix in place, this test would have failed with:
++    // - Expected: 2
++    // - Actual  : 1
++    // i.e. 3 lines on page 1 and a widow on page 2.
++    assertXPath(pXmlDoc, "//page[2]/body/tab/row/cell[2]/txt/SwParaPortion/SwLineLayout", 2);
++}
++
++CPPUNIT_TEST_FIXTURE(Test, testSplitRowWidowsWord2007)
++{
++    // Given the same document in compatibilityMode 12:
++    createSwDoc("table-split-row-widow-12.docx");
++
++    // When laying out that document:
++    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
++
++    // Then make sure widow control doesn't apply in the split row, like in Word 2007:
++    assertXPath(pXmlDoc, "//page[2]/body/tab/row/cell[2]/txt/SwParaPortion/SwLineLayout", 1);
++}
+ }
+ 
+ /* vim:set shiftwidth=4 softtabstop=4 expandtab: */
+diff --git a/sw/qa/extras/layout/layout6.cxx b/sw/qa/extras/layout/layout6.cxx
+index 91e2f1b21..4cacf00f2 100644
+--- a/sw/qa/extras/layout/layout6.cxx
++++ b/sw/qa/extras/layout/layout6.cxx
+@@ -2307,18 +2307,14 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter6, testCool15942_tableSplitRowReformat)
+ 
+     xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+ 
+-    // The wide cell's paragraph wraps to two lines and the row splits at the page boundary: the
+-    // first line ("MISSING...") stays in the master row on page 1, the second ("blah Blah blah")
+-    // moves to the follow on page 2. Note that the layout is not perfect: Word moves the whole row
+-    // to page 2, so the test could need to be fixed when that is fixed.
++    // The wide cell's paragraph wraps to two lines and only one fits on page 1: widow control
++    // moves the whole row to page 2, like Word does.
+     // Without the fix, the height of the line was 0.
+-    OUString oLineHeight
+-        = getXPath(pXmlDoc, "//page[1]/body/tab[2]/row[2]/cell[2]/txt/infos/prtBounds", "height");
+-    CPPUNIT_ASSERT_GREATEREQUAL(sal_Int32(160), oLineHeight.toInt32());
+-    OUString oLineContent = getXPath(
+-        pXmlDoc, "//page[1]/body/tab[2]/row[2]/cell[2]/txt/SwParaPortion/SwLineLayout", "portion");
+-    CPPUNIT_ASSERT(oLineContent.startsWith("MISSING"));
+-    CPPUNIT_ASSERT_EQUAL(sal_Int32(80), oLineContent.getLength());
++    CPPUNIT_ASSERT(
++        getXPathContent(pXmlDoc, "//page[2]/body/tab/row/cell[2]/txt").startsWith("MISSING"));
++    OUString oHeight
++        = getXPath(pXmlDoc, "//page[2]/body/tab/row/cell[2]/txt/infos/prtBounds", "height");
++    CPPUNIT_ASSERT_GREATEREQUAL(sal_Int32(2 * 160), oHeight.toInt32());
+ }
+ 
+ CPPUNIT_TEST_FIXTURE(SwLayoutWriter6, testTdf168873ParagraphReflow)
+diff --git a/sw/source/core/text/widorp.cxx b/sw/source/core/text/widorp.cxx
+index f8fc286d3..df1bc977c 100644
+--- a/sw/source/core/text/widorp.cxx
++++ b/sw/source/core/text/widorp.cxx
+@@ -348,15 +348,13 @@ WidowsAndOrphans::WidowsAndOrphans( SwTextFrame *pNewFrame, const SwTwips nRst,
+ 
+     bool bResetFlags = false;
+ 
+-    bool bWordTableCell = false;
+-    if (m_pFrame->IsInFly())
+-    {
+-        // Enable widow / orphan control in Word-style table cells in split rows, at least inside
+-        // flys.
+-        const SwDoc& rDoc = m_pFrame->GetTextNodeForParaProps()->GetDoc();
+-        const IDocumentSettingAccess& rIDSA = rDoc.getIDocumentSettingAccess();
+-        bWordTableCell = rIDSA.get(DocumentSettingId::TABLE_ROW_KEEP);
+-    }
++    // Enable widow / orphan control in Word-style table cells in split rows: inside flys, and
++    // everywhere for Word >= 2013 (DOCX compatibilityMode >= 15, no ADD_FLY_OFFSETS).
++    const SwDoc& rDoc = m_pFrame->GetTextNodeForParaProps()->GetDoc();
++    const IDocumentSettingAccess& rIDSA = rDoc.getIDocumentSettingAccess();
++    const bool bWordTableCell
++        = rIDSA.get(DocumentSettingId::TABLE_ROW_KEEP)
++          && (m_pFrame->IsInFly() || !rIDSA.get(DocumentSettingId::ADD_FLY_OFFSETS));
+ 
+     if ( m_pFrame->IsInTab() && !bWordTableCell )
+     {
