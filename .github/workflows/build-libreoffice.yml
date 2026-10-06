@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Read versions
-        run: cat tools/build-lo/versions.env >> "$GITHUB_ENV"
+        run: grep -v "^#" tools/build-lo/versions.env >> "$GITHUB_ENV"
 
       # /mnt has ~70 GB free on hosted runners; the build needs about 25 GB.
       - name: Prepare disk
