@@ -353,6 +353,8 @@ def hb_font(family, bold, italic):
 
 def shaped_width(font, text, size):
     """Advance width in twips of text in font at size (half-points), with kerning and ligatures."""
+    if not text:
+        return 0
     import uharfbuzz as hb
     buf = hb.Buffer()
     buf.add_str(text)
