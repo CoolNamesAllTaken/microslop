@@ -166,6 +166,18 @@ def test_one_line_widows(tmp_path):
     assert "widowControl" not in paras[1]
 
 
+
+def test_shaped_width_empty():
+    assert prep.shaped_width(None, "", 22) == 0
+
+
+@pytest.mark.skipif(not fonts_available(), reason="needs `microslop fonts` and FONTCONFIG_FILE")
+def test_one_line_widows_trailing_space_run(tmp_path):
+    para = p("A short paragraph.").replace("</w:p>", '<w:r><w:t xml:space="preserve">  </w:t></w:r></w:p>')
+    parts = run_prep(tmp_path, para)
+    assert '<w:widowControl w:val="0"/>' in parts["word/document.xml"]
+
+
 def test_bullet_fixture_numbering_kept(tmp_path):
     parts = run_prep(tmp_path, bullet("one") + bullet("two", 1), numbering=BULLETS)
     assert parts["word/numbering.xml"].count("<w:lvl ") == 3
